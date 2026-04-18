@@ -1325,10 +1325,9 @@ async def dashboard(session: str = Depends(get_current_session)):
     else:
         stats_html = "<tr><td colspan='2' class='no-data'>No usage data yet</td></tr>"
 
-    # Check token status - check both legacy auth_token and new auth_tokens list
-    has_auth_token = bool(str(config.get("auth_token") or "").strip()) or any(config.get("auth_tokens") or [])
-    token_status = "✅ Configured" if has_auth_token else "❌ Not Set"
-    token_class = "status-good" if has_auth_token else "status-bad"
+    # Check token status
+    token_status = "✅ Configured" if config.get("auth_token") else "❌ Not Set"
+    token_class = "status-good" if config.get("auth_token") else "status-bad"
     
     cf_status = "✅ Configured" if config.get("cf_clearance") else "❌ Not Set"
     cf_class = "status-good" if config.get("cf_clearance") else "status-bad"
@@ -4889,7 +4888,7 @@ async def anthropic_messages(request: AnthropicMessageRequest, raw_request: Requ
                     "content": [],
                     "model": request.model,
                     "stop_reason": None,
-                    "usage": {"input_tokens": sum(len(str(m.get("content", ""))) for m in openai_messages), "output_tokens": 0}
+                    "usage": {"input_tokens": 0, "output_tokens": 0}
                 }
             }
             yield f"event: message_start\ndata: {json.dumps(message_start)}\n\n"
@@ -4906,64 +4905,12 @@ async def anthropic_messages(request: AnthropicMessageRequest, raw_request: Requ
                 # Call api_chat_completions and await the result first
                 result = await api_chat_completions(mock_request, api_key)
 
-                # Call api_chat_completions and await the result first
-                result = await api_chat_completions(mock_request, api_key)
-
-                if not isinstance(result, StreamingResponse):
-                    # Handle non-streaming result or error
-                    if isinstance(result, dict) and "error" in result:
-                        yield f"event: error\ndata: {json.dumps({'type': 'error', 'error': result['error']})}\n\n"
-                    else:
-                        # Handle unexpected non-streaming success as an error or convert if needed
-                        yield f"event: error\ndata: {json.dumps({'type': 'error', 'error': {'message': 'Unexpected non-streaming response'}})}\n\n"
-                    return
-
-                # Handle the streaming response
-                async for chunk in result.body_iterator:
+                if isinstance(result, StreamingResponse):
                     # Handle the streaming response
                     async for chunk in result.body_iterator:
                         chunk_str = chunk.decode('utf-8') if isinstance(chunk, bytes) else str(chunk)
-            # Handle the streaming response
-            buffer = ""
-            async for chunk in result.body_iterator:
-                chunk_str = chunk.decode('utf-8') if isinstance(chunk, bytes) else str(chunk)
-                buffer += chunk_str
-                while '\n' in buffer:
-                    line, buffer = buffer.split('\n', 1)
-                    line = line.strip()
-                    if not line.startswith('data: '):
-                        continue
-                    data = line[6:]
-                    if data == '[DONE]':
-                        break
-
-                    try:
-                        chunk_data = json.loads(data)
-                        if "error" in chunk_data:
-                            error_event = {
-                                "type": "error",
-                                "error": chunk_data["error"]
-                            }
-                            yield f"event: error\ndata: {json.dumps(error_event)}\n\n"
-                            return
-
-                        delta = chunk_data.get("choices", [{}])[0].get("delta", {})
-                        if "content" in delta:
-                            content = delta["content"]
-                            accumulated_text += content
-                            content_block = {
-                                "type": "content_block_delta",
-                                "index": 0,
-                                "delta": {"type": "text_delta", "text": content}
-                            }
-                            yield f"event: content_block_delta\ndata: {json.dumps(content_block)}\n\n"
-
-                        if "reasoning_content" in delta:
-                            reasoning = delta["reasoning_content"]
-                            accumulated_reasoning += reasoning
-
-                    except json.JSONDecodeError:
-                        continue
+                        for line_part in chunk_str.strip().split('\n'):
+                            if not line_part.startswith('data: '):
                                 continue
                             data = line_part[6:]
                             if data == '[DONE]':
@@ -5019,7 +4966,7 @@ async def anthropic_messages(request: AnthropicMessageRequest, raw_request: Requ
                     "stop_reason": "end_turn"
                 },
                 "usage": {
-                    "output_tokens": len(accumulated_text)
+                    "output_tokens": len(accumulated_text.split())
                 }
             }
             yield f"event: message_delta\ndata: {json.dumps(message_delta)}\n\n"
