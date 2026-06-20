@@ -65,10 +65,40 @@ def _apply_config_defaults(config: dict) -> None:
     config.setdefault("api_keys", [])
     config.setdefault("usage_stats", {})
     config.setdefault("prune_invalid_tokens", False)
-    config.setdefault("persist_arena_auth_cookie", False)
+    config.setdefault("persist_arena_auth_cookie", True)
     config.setdefault("camoufox_proxy_window_mode", constants.DEFAULT_CAMOUFOX_PROXY_WINDOW_MODE)
     config.setdefault("camoufox_fetch_window_mode", constants.DEFAULT_CAMOUFOX_FETCH_WINDOW_MODE)
     config.setdefault("chrome_fetch_window_mode", constants.DEFAULT_CHROME_FETCH_WINDOW_MODE)
+    
+    # Environment variable overrides (useful for ephemeral cloud hostings like Koyeb)
+    if os.environ.get("ADMIN_PASSWORD"):
+        config["password"] = os.environ.get("ADMIN_PASSWORD")
+    if os.environ.get("ARENA_AUTH_TOKEN"):
+        token = os.environ.get("ARENA_AUTH_TOKEN").strip()
+        if token:
+            if "auth_tokens" not in config or not isinstance(config["auth_tokens"], list):
+                config["auth_tokens"] = []
+            if token not in config["auth_tokens"]:
+                config["auth_tokens"].append(token)
+    if os.environ.get("ARENA_AUTH_TOKENS"):
+        tokens_list = [t.strip() for t in os.environ.get("ARENA_AUTH_TOKENS").split(",") if t.strip()]
+        for token in tokens_list:
+            if "auth_tokens" not in config or not isinstance(config["auth_tokens"], list):
+                config["auth_tokens"] = []
+            if token not in config["auth_tokens"]:
+                config["auth_tokens"].append(token)
+    if os.environ.get("LMA_BRIDGE_API_KEY"):
+        key = os.environ.get("LMA_BRIDGE_API_KEY").strip()
+        if key:
+            if "api_keys" not in config or not isinstance(config["api_keys"], list):
+                config["api_keys"] = []
+            if not any(k.get("key") == key for k in config["api_keys"] if isinstance(k, dict)):
+                config["api_keys"].append({
+                    "name": "Env Configured Key",
+                    "key": key,
+                    "rpm": int(os.environ.get("LMA_BRIDGE_API_KEY_RPM", "120")),
+                    "created": 1718812800
+                })
     
     # Normalize api_keys
     if isinstance(config.get("api_keys"), list):
@@ -179,7 +209,7 @@ def get_default_config() -> dict:
         ],
         "usage_stats": {},
         "prune_invalid_tokens": False,
-        "persist_arena_auth_cookie": False,
+        "persist_arena_auth_cookie": True,
         "camoufox_proxy_window_mode": constants.DEFAULT_CAMOUFOX_PROXY_WINDOW_MODE,
         "camoufox_fetch_window_mode": constants.DEFAULT_CAMOUFOX_FETCH_WINDOW_MODE,
         "chrome_fetch_window_mode": constants.DEFAULT_CHROME_FETCH_WINDOW_MODE,
